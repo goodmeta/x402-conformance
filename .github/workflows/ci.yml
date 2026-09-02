@@ -1,0 +1,35 @@
+# The suite's own correctness gate.
+#
+# `npm test` is not a formality here: it boots sabotaged facilitators over real
+# sockets and asserts each one is caught. A change that quietly weakens a check
+# turns this red, which is the only thing standing between "conformance suite"
+# and "program that prints CONFORMANT".
+#
+# Deliberately does NOT probe any live facilitator. Grading someone's deployment
+# on our schedule is their call to make, not ours, and a network blip in CI
+# should never read as somebody failing conformance.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Self-test (sabotage matrix)
+        run: npm test

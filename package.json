@@ -1,0 +1,25 @@
+{
+  "name": "@goodmeta/x402-conformance",
+  "version": "0.1.0",
+  "description": "Point it at any x402 facilitator and find out whether it conforms to the v2 spec. Read-only probes, safe against mainnet.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "x402-conformance": "dist/cli.js" },
+  "main": "dist/runner.js",
+  "types": "dist/runner.d.ts",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "conformance": "tsx src/cli.ts",
+    "test": "tsx src/self-test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/goodmeta/x402-conformance.git" },
+  "keywords": ["x402", "conformance", "facilitator", "agent-payments"]
+}
