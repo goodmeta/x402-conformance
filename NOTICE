@@ -1,0 +1,10 @@
+x402 Conformance Suite
+Copyright 2026 Good Meta
+
+This product is derived in part from the conformance checks that were embedded in
+github.com/stablecoinxyz/x402-facilitator, Copyright (c) 2025 Stable Coin Inc.,
+licensed under the MIT License. Those checks asserted properties of that one
+deployment rather than of the specification, and were rewritten here to describe
+x402 v2 itself. The MIT notice is retained as that license requires.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.

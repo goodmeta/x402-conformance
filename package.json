@@ -8,7 +8,7 @@
   "bin": { "x402-conformance": "dist/cli.js" },
   "main": "dist/runner.js",
   "types": "dist/runner.d.ts",
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "NOTICE"],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
