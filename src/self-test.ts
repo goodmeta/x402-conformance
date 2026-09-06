@@ -89,6 +89,14 @@ const SABOTAGES = [
     }
     return conforming(path, body);
   }),
+  sabotage("500s on /supported", (path, body) => {
+    if (path === "/supported") return { status: 500, json: { error: "internal" } };
+    return conforming(path, body);
+  }),
+  sabotage("returns /supported with no kinds array", (path, body) => {
+    if (path === "/supported") return { status: 200, json: { extensions: [], signers: {} } };
+    return conforming(path, body);
+  }),
   sabotage("falls through to a default chain for an unknown network", (path, body) => {
     if (path === "/verify") {
       const b = body as { paymentPayload?: { accepted?: { network?: string } } };
@@ -98,6 +106,101 @@ const SABOTAGES = [
     }
     return conforming(path, body);
   }),
+];
+
+/**
+ * The other half of the job: a suite that fails honest services is as useless as
+ * one that passes broken ones. Each target below is either conforming or simply
+ * out of scope, and NONE of them may be reported as non-conformant.
+ *
+ * Written after the first field test against facilitators we do not own
+ * (2026-09-06), which returned three wrong verdicts out of five.
+ */
+
+/** Required fields of PaymentRequirements, §5.1.2. */
+const REQUIRED_PR = ["scheme", "network", "amount", "asset", "payTo", "maxTimeoutSeconds"] as const;
+
+/**
+ * Conforming, and it validates its input the way the schema says — like PayAI,
+ * which named every defect in our probe. A probe built to §5.2 gets a 200.
+ */
+const strictSchema: Handler = (path, body) => {
+  if (path === "/verify" || path === "/settle") {
+    const b = body as { paymentPayload?: Record<string, unknown> } | null;
+    const pp = b?.paymentPayload;
+    const complaints: string[] = [];
+    if (!pp) complaints.push("paymentPayload: expected object");
+    else {
+      if (typeof pp.resource !== "object" || pp.resource === null) {
+        complaints.push("resource: expected object, received " + typeof pp.resource);
+      }
+      const accepted = pp.accepted as Record<string, unknown> | undefined;
+      if (typeof accepted !== "object" || accepted === null) complaints.push("accepted: expected object");
+      else {
+        for (const f of REQUIRED_PR) {
+          if (accepted[f] === undefined) complaints.push(`accepted.${f}: received undefined`);
+        }
+      }
+      // EIP-3009's nonce is bytes32. PayAI rejects anything else with
+      // "unrecognized EVM payment payload", which the suite used to read as a
+      // spec violation by PayAI.
+      const auth = (pp.payload as { authorization?: Record<string, unknown> } | undefined)?.authorization;
+      const nonce = auth?.nonce;
+      if (typeof nonce !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(nonce)) {
+        complaints.push("unrecognized EVM payment payload: expected an EIP-3009 authorization");
+      }
+    }
+    if (complaints.length > 0) {
+      return { status: 400, json: { isValid: false, invalidReason: "invalid_payload", invalidMessage: complaints.join("; ") } };
+    }
+  }
+  return conforming(path, body);
+};
+
+/** Speaks x402 v1 only. It never claimed v2, so v2 checks do not apply to it. */
+const v1Only: Handler = (path) => {
+  if (path === "/supported") {
+    return {
+      status: 200,
+      json: {
+        kinds: [
+          { x402Version: 1, scheme: "exact", network: "base-sepolia" },
+          { x402Version: 1, scheme: "exact", network: "base" },
+        ],
+      },
+    };
+  }
+  return { status: 404, json: { error: "not found" } };
+};
+
+/** Wants an API key. Nothing about its conformance can be read through a 401. */
+const authRequired: Handler = (path, body) => {
+  if (path === "/verify" || path === "/settle") {
+    return { status: 401, json: { error: { code: "invalid_api_key", message: "missing or invalid API key" } } };
+  }
+  return conforming(path, body);
+};
+
+/** v2, but on a chain this suite cannot build a payment for. */
+const nonEvmOnly: Handler = (path, body) => {
+  if (path === "/supported") {
+    return {
+      status: 200,
+      json: {
+        kinds: [{ x402Version: 2, scheme: "exact", network: "near:mainnet" }],
+        extensions: [],
+        signers: { "near:mainnet": ["x402-relayer.example.near"] },
+      },
+    };
+  }
+  return conforming(path, body);
+};
+
+const MISJUDGMENTS: { name: string; handler: Handler; expect: "conformant" | "not-assessable" }[] = [
+  { name: "a conforming facilitator that validates its input strictly", handler: strictSchema, expect: "conformant" },
+  { name: "a v1-only facilitator", handler: v1Only, expect: "not-assessable" },
+  { name: "a facilitator that requires an API key", handler: authRequired, expect: "not-assessable" },
+  { name: "a v2 facilitator on a non-EVM chain only", handler: nonEvmOnly, expect: "not-assessable" },
 ];
 
 async function boot(handler: Handler): Promise<{ url: string; close: () => Promise<void> }> {
@@ -146,7 +249,7 @@ async function main(): Promise<void> {
     try {
       const r = await runConformance(s.url);
       const failed = r.results.filter((x) => x.severity === "core" && !x.pass);
-      check("passes every core check", r.conformant, failed.map((f) => f.name).join(", ") || undefined);
+      check("passes every core check", r.conformant === true, failed.map((f) => f.name).join(", ") || undefined);
       check("runs a meaningful number of core checks", r.core.total >= 12, `${r.core.total} core checks`);
     } finally {
       await s.close();
@@ -159,9 +262,32 @@ async function main(): Promise<void> {
     try {
       const r = await runConformance(s.url);
       const failed = r.results.filter((x) => x.severity === "core" && !x.pass);
-      check(name, !r.conformant, failed.length ? `caught by: ${failed.map((f) => f.name).join("; ")}` : "NOT CAUGHT");
+      // `=== false` and not `!r.conformant`: a sabotage that made the target
+      // unreadable would satisfy a falsy test without any check having fired.
+      check(name, r.conformant === false, failed.length ? `caught by: ${failed.map((f) => f.name).join("; ")}` : "NOT CAUGHT");
     } finally {
       await s.close();
+    }
+  }
+
+  console.log("\nhonest targets — none of these may be called non-conformant");
+  for (const { name, handler, expect } of MISJUDGMENTS) {
+    const s2 = await boot(handler);
+    try {
+      const r = await runConformance(s2.url);
+      const failed = r.results.filter((x) => x.severity === "core" && !x.pass);
+      const detail = failed.length ? `wrongly failed: ${failed.map((f) => f.name).join("; ")}` : undefined;
+      if (expect === "conformant") {
+        check(`${name} — judged conformant`, r.conformant === true, detail);
+      } else {
+        check(
+          `${name} — judged not assessable`,
+          r.conformant === null && Boolean(r.notAssessable),
+          r.notAssessable ?? detail ?? `conformant=${String(r.conformant)}`,
+        );
+      }
+    } finally {
+      await s2.close();
     }
   }
 
@@ -169,7 +295,7 @@ async function main(): Promise<void> {
   {
     // Port 1 on loopback: nothing listens, connection refused immediately.
     const r = await runConformance("http://127.0.0.1:1");
-    check("is reported as unreachable, not as a failure", Boolean(r.unreachable) && !r.conformant, r.unreachable);
+    check("is reported as unreachable, not as a failure", Boolean(r.unreachable) && r.conformant === null, r.unreachable);
   }
 
   console.log(failures === 0 ? "\nself-test passed" : `\nself-test FAILED (${failures})`);

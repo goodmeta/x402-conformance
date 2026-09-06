@@ -1,6 +1,6 @@
 {
   "name": "@goodmeta/x402-conformance",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Point it at any x402 facilitator and find out whether it conforms to the v2 spec. Read-only probes, safe against mainnet.",
   "license": "Apache-2.0",
   "type": "module",

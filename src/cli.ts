@@ -2,9 +2,10 @@
 /**
  * x402-conformance <url> [--json] [--timeout ms]
  *
- * Exits 0 when every core check passes, 1 when any fails, 2 on bad usage or an
- * unreachable target — so a red suite and a broken invocation are distinguishable
- * in CI.
+ * Exits 0 when every core check passes, 1 when any fails, and 2 when nothing was
+ * graded — bad usage, an unreachable target, or a target outside this suite's
+ * scope. A red suite, a broken invocation and an unanswerable question stay
+ * distinguishable in CI.
  */
 
 import { runConformance, type Report } from "./runner.js";
@@ -29,6 +30,13 @@ function render(report: Report): string {
     return lines.join("\n");
   }
 
+  if (report.notAssessable) {
+    lines.push(`CANNOT ASSESS — ${report.notAssessable}`);
+    lines.push("");
+    lines.push("This is not a failure. Nothing about the target's conformance was measured.");
+    return lines.join("\n");
+  }
+
   for (const severity of ["core", "optional"] as const) {
     const group = report.results.filter((r) => r.severity === severity);
     if (group.length === 0) continue;
@@ -49,6 +57,7 @@ function render(report: Report): string {
       ? "CONFORMANT — every spec-required check passed."
       : "NOT CONFORMANT — a spec-required check failed.",
   );
+
   lines.push("A pass is a claim about this deployment at this moment, not a standing property.");
   return lines.join("\n");
 }
@@ -88,7 +97,7 @@ async function main(): Promise<number> {
 
   const report = await runConformance(url.toString(), timeoutMs ? { timeoutMs } : {});
   console.log(wantsJson ? JSON.stringify(report, null, 2) : render(report));
-  if (report.unreachable) return 2;
+  if (report.unreachable || report.notAssessable) return 2;
   return report.conformant ? 0 : 1;
 }
 

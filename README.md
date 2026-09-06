@@ -6,8 +6,9 @@ Point it at any x402 facilitator and find out whether it conforms to the v2 spec
 npx @goodmeta/x402-conformance https://your-facilitator.example
 ```
 
-Exits `0` when every spec-required check passes, `1` when one fails, `2` when the
-target is unreachable — so a red suite and a broken invocation stay
+Exits `0` when every spec-required check passes, `1` when one fails, and `2` when
+nothing was graded — the target is unreachable, or it is outside what this suite
+can judge. A red suite, a broken invocation and an unanswerable question stay
 distinguishable in CI.
 
 ## What it does
@@ -32,6 +33,26 @@ moves. Nothing is written, nothing is queued, no funds are touched.
 The network probed is taken from the target's **own** `/supported` rather than
 hardcoded, so the suite works against a facilitator on any chain, and it prefers
 a testnet when one is advertised.
+
+## What it will not judge
+
+A suite that fails an honest service is as useless as one that passes a broken
+one. Three kinds of target are reported as **CANNOT ASSESS** — `conformant` is
+`null`, exit code `2` — rather than graded:
+
+- **It declares v1 kinds only.** A facilitator speaking x402 v1 never claimed v2,
+  so v2's requirements are not its to meet. This gate is narrow on purpose: a
+  `/supported` that errors, or answers 200 with no `kinds`, is broken rather than
+  out of scope and is graded as such.
+- **It advertises v2 only on non-EVM networks.** The only payment this suite can
+  build is an `exact` EIP-3009 authorization. Pointing it at a Solana, NEAR,
+  Stellar or XRPL facilitator would grade an answer to a question that
+  facilitator was never asked.
+- **`/verify` answers 401 or 403.** Behind a credential wall there is nothing to
+  read.
+
+A violation found before the scope gate still stands: if `/supported` itself
+breaks a Required rule, the verdict is NOT CONFORMANT, not "cannot assess."
 
 ## Core vs optional
 
@@ -85,15 +106,29 @@ than no suite, because it certifies whatever it is pointed at.
 
 Currently caught: accepting an unsigned payment at `/verify`; settling one;
 omitting `signers`; advertising a bare chain id instead of CAIP-2; rejecting
-without a reason; returning 500 on a malformed body; falling through to a default
-chain when asked about a network never advertised.
+without a reason; returning 500 on a malformed body; returning 500 on
+`/supported`; answering `/supported` with no `kinds` array; falling through to a
+default chain when asked about a network never advertised.
+
+The other half of the same test asserts that honest targets are **not** failed: a
+facilitator that validates its input strictly against the v2 schema is judged
+conformant, and a v1-only service, a credential-walled one and a non-EVM one are
+each reported as not assessable. Those four cases were added after the first run
+against facilitators nobody here operates, which returned three wrong verdicts —
+including NOT CONFORMANT against a service that conforms. The cause was this
+suite's own probe, not the targets. See [`docs/field-test-2026-09-06.md`](https://github.com/goodmeta/x402-conformance/blob/main/docs/field-test-2026-09-06.md).
 
 ## Spec
 
 Checks are written against
-[`x402-foundation/x402` `specs/x402-specification-v2.md`](https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md),
-read 2026-09-02. The revision is recorded in every report: a pass is a claim
-about a spec revision as much as about a deployment.
+[`x402-foundation/x402` `specs/x402-specification-v2.md`](https://github.com/x402-foundation/x402/blob/main/specs/x402-specification-v2.md)
+at commit `e187dda1ef0c69c85416625342e5bb7c4b857dac`. The revision is recorded in
+every report: a pass is a claim about a spec revision as much as about a
+deployment.
+
+The probe itself is built to the field tables in §5.1.2 (`PaymentRequirements`),
+§5.2 (`PaymentPayload`) and `ResourceInfo` — not to §7.1's illustrative example,
+which omits fields those tables mark Required.
 
 Note that `x402-foundation/x402` is the live repository. `coinbase/x402` is not.
 
@@ -103,6 +138,9 @@ Note that `x402-foundation/x402` is the live repository. `coinbase/x402` is not.
 import { runConformance } from "@goodmeta/x402-conformance";
 
 const report = await runConformance("https://your-facilitator.example");
+// `conformant` is `true`, `false`, or `null` when the target was out of scope —
+// check for null before treating a falsy value as a failure.
+if (report.conformant === null) throw new Error(report.notAssessable ?? report.unreachable);
 process.exit(report.conformant ? 0 : 1);
 ```
 
