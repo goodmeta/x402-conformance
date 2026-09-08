@@ -58,6 +58,37 @@ const SABOTAGES = [
     if (path === "/settle") return { status: 200, json: { success: true, payer: "0xdead", transaction: "0xabc", network: "eip155:84532" } };
     return conforming(path, body);
   }),
+  sabotage("answers settlement_pending with no transaction hash", (path, body) => {
+    // The exact shape §5.3.2 forbids: broadcast happened, the caller is told
+    // "pending", and gets nothing to reconcile with. A client reads this as
+    // did-not-happen and signs a fresh authorization — a second payment.
+    if (path === "/settle")
+      return {
+        status: 200,
+        json: {
+          success: false,
+          payer: "0xdead",
+          transaction: "",
+          network: "eip155:84532",
+          errorReason: "settlement_pending",
+        },
+      };
+    return conforming(path, body);
+  }),
+  sabotage("reports a pending settlement as a success", (path, body) => {
+    if (path === "/settle")
+      return {
+        status: 200,
+        json: {
+          success: true,
+          payer: "0xdead",
+          transaction: "0xabc",
+          network: "eip155:84532",
+          errorReason: "settlement_pending",
+        },
+      };
+    return conforming(path, body);
+  }),
   sabotage("omits `signers` from /supported", (path, body) => {
     if (path === "/supported") {
       const ok = conforming(path, body).json as Record<string, unknown>;

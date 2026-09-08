@@ -295,6 +295,73 @@ export function checkSettle(probe: Probe, ctx: Ctx): void {
     typeof body.errorReason === "string" && body.errorReason.length > 0,
     typeof body.errorReason === "string" ? body.errorReason : "absent",
   );
+
+  checkSettlementPending(body, ctx);
+}
+
+/**
+ * §9 / §5.3.2 — `settlement_pending`.
+ *
+ * "The settlement transaction was broadcast but its confirmation could not be
+ * established ... A SettleResponse with this errorReason MUST carry a non-empty
+ * transaction (the broadcast hash) and network so the caller can reconcile on
+ * chain before deciding whether to retry."
+ *
+ * Added upstream 2026-08-17 (x402-foundation/x402 PR #3083). It is the answer to
+ * a real and expensive failure: a facilitator that broadcasts the transfer, then
+ * cannot read the receipt, and reports a flat failure with no hash. A conforming
+ * client reads that as did-not-happen and signs a fresh authorization, which is a
+ * second payment. The hash is what makes the outcome reconcilable instead.
+ *
+ * WHY THIS CHECK REPORTS "NOT EXERCISED" RATHER THAN A PASS
+ * --------------------------------------------------------
+ * A prober cannot make a facilitator lose a receipt. So on almost every run this
+ * clause is never reached, and asserting it anyway would produce a check that
+ * cannot fail — worse than no check, because it reports safety nobody measured.
+ * The invariant is graded only when a `settlement_pending` response is actually
+ * observed. Otherwise this records, as an optional note, that it went untested.
+ */
+export function checkSettlementPending(body: Record<string, unknown>, ctx: Ctx): void {
+  if (body.errorReason !== "settlement_pending") {
+    ctx.add(
+      "settlement_pending invariant NOT EXERCISED by this probe",
+      "optional",
+      "§9",
+      true,
+      "no settlement_pending response was observed, so the MUST-carry-a-hash rule went untested. " +
+        "A prober cannot force a receipt failure; only a facilitator under real RPC trouble reaches it.",
+    );
+    return;
+  }
+
+  const tx = body.transaction;
+  ctx.add(
+    "settlement_pending carries the broadcast transaction hash",
+    "core",
+    "§5.3.2",
+    typeof tx === "string" && tx.length > 0,
+    typeof tx === "string" && tx.length === 0
+      ? "empty transaction — the caller cannot reconcile, and reads this as did-not-happen"
+      : typeof tx === "string"
+        ? tx
+        : "transaction absent",
+  );
+
+  ctx.add(
+    "settlement_pending carries the network",
+    "core",
+    "§9",
+    typeof body.network === "string" && (body.network as string).length > 0,
+    typeof body.network === "string" ? (body.network as string) : "absent",
+  );
+
+  ctx.add(
+    "settlement_pending is not reported as success",
+    "core",
+    "§9",
+    body.success === false,
+    body.success === true ? "success:true with a pending settlement" : undefined,
+  );
 }
 
 /**
