@@ -30,6 +30,10 @@ it reaches the verifier, and cryptographically hopeless, so it can never
 authorize anything. A conforming facilitator declines all of them and no value
 moves. Nothing is written, nothing is queued, no funds are touched.
 
+That safety sets the scope. Because nothing can settle, the suite sees only how a
+facilitator answers, never what it does once money has moved: how it treats a
+retry after a lost `/settle` response, for example, is outside what it can test.
+
 The network probed is taken from the target's **own** `/supported` rather than
 hardcoded, so the suite works against a facilitator on any chain, and it prefers
 a testnet when one is advertised.
