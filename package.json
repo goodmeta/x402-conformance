@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@types/node": "24.13.3",
-    "tsx": "4.23.13",
+    "tsx": "4.23.15",
     "typescript": "5.9.3"
   },
   "repository": { "type": "git", "url": "git+https://github.com/goodmeta/x402-conformance.git" },
